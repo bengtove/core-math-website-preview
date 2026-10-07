@@ -1,0 +1,65 @@
+name: Deploy CoRE-Math redesign preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out redesign source
+        uses: actions/checkout@v4
+        with:
+          repository: bengtove/-core-math-website-test
+          ref: redesign-preview
+          path: source
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Apply preview base path to build copy
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          config = Path("source/_config.yml")
+          text = config.read_text(encoding="utf-8")
+          old = 'baseurl: "/-core-math-website-test"'
+          new = 'baseurl: "/core-math-website-preview"'
+          if old not in text:
+              raise SystemExit("Expected production baseurl was not found")
+          config.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Build preview with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./source
+          destination: ./_site
+          build_revision: ${{ github.sha }}
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./_site
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy preview to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
